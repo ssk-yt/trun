@@ -286,6 +286,54 @@ def test_submit_opts_is_optional(tmp_path):
     assert trun.submit_cmd(cfg, "/a", "b.sh").endswith("qsub b.sh")
 
 
+# ------------------------------------------------------------- after_push
+
+def test_after_push_skipped_when_unset(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(trun, "ssh", lambda *a, **k: calls.append(a))
+    root = make_project(tmp_path)
+    trun.run_after_push(root, trun.load_config(root))
+    assert calls == []
+
+
+def test_after_push_runs_in_remote_root(tmp_path, monkeypatch):
+    seen = {}
+
+    def fake_ssh(cfg, cmd, **kw):
+        seen["cmd"] = cmd
+
+        class P:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+        return P()
+
+    monkeypatch.setattr(trun, "ssh", fake_ssh)
+    root = make_project(
+        tmp_path, "P",
+        config=('host = "h"\nremote_root = "/r"\nscheduler = "uge"\n'
+                'after_push = "uv sync"\n'))
+    trun.run_after_push(root, trun.load_config(root))
+    assert seen["cmd"] == "cd /r/P && uv sync"
+
+
+def test_after_push_failure_aborts(tmp_path, monkeypatch):
+    def fake_ssh(cfg, cmd, **kw):
+        class P:
+            returncode = 1
+            stdout = ""
+            stderr = "boom"
+        return P()
+
+    monkeypatch.setattr(trun, "ssh", fake_ssh)
+    root = make_project(
+        tmp_path, "P",
+        config=('host = "h"\nremote_root = "/r"\nscheduler = "uge"\n'
+                'after_push = "uv sync"\n'))
+    with pytest.raises(SystemExit):
+        trun.run_after_push(root, trun.load_config(root))
+
+
 # ------------------------------------------------------------- キュー照会
 
 def test_queue_cmd(tmp_path):

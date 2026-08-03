@@ -56,6 +56,7 @@ host = "tsubame"
 remote_root = "/gs/bs/<group>/<user>"
 scheduler = "uge"                 # "uge" | "pbs" | "slurm"
 submit_opts = "-g <group>"      # 任意。qsub/sbatch にそのまま渡す
+after_push = "uv sync"            # 任意。push のたびにリモートで実行
 ```
 
 `submit_opts` の中身は解釈せずそのまま渡す。Grid Engine の `-g <group>`、
@@ -70,6 +71,28 @@ tsubame は Grid Engine (AGE) なので `uge`。`trun init` が自動判定す�
 ローカル  ~/research/Si-band/band
 リモート  /gs/bs/<group>/<user>/Si-band/band
 ```
+
+### 転送しないものをリモートで再構成する
+
+Python の仮想環境のようにビルド済みバイナリを含むものは、macOS から Linux へ
+送っても動かない。`.trunignore` で転送を止め、`after_push` でリモート側に作らせる。
+
+```
+# .trunignore
+.venv/
+```
+
+```toml
+# .trun/config.toml
+after_push = "$HOME/.local/bin/uv sync"
+```
+
+`uv.lock` は転送されるので、リモートでも同一バージョンの環境が再現される。
+`after_push` の中身は解釈しないため、conda なら `conda env update -f environment.yml`、
+make なら `make` を書けばよい。`submit` では `qsub` の前に走り、失敗したら投入しない。
+
+`$SHELL -lc` は `.zshrc` を読まないので、`~/.local/bin` に入れたコマンドは
+絶対パスで書くこと。
 
 ## 使い方
 

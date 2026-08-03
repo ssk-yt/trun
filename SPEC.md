@@ -96,11 +96,24 @@ host = "tsubame"                              # ~/.ssh/config のエイリアス
 remote_root = "/gs/bs/<group>/<user>"       # クラスタ側のルート
 scheduler = "uge"                             # "uge" | "pbs" | "slurm"
 submit_opts = "-g <group>"                  # 任意。qsub/sbatch にそのまま渡す
+after_push = "$HOME/.local/bin/uv sync"       # 任意。push のたびにリモートで実行
 ```
 
 tsubame は **Grid Engine (AGE 2023.1.1)** であり PBS ではない。`uge` を使う。
 
 必須は上 3 つ。`submit_opts` は省略可で、これ以外のキーは v0.1 では持たない。
+
+`after_push` は push が成功した直後に、リモートの trun ルートで実行される。
+中身は解釈しない（`uv sync` でも `conda env update -f environment.yml` でも `make` でもよい）。
+`submit` では `qsub` の前に走り、失敗したら投入しない。
+
+用途は、転送しない生成物をリモート側で再構成すること。たとえば Python の仮想環境は
+ビルド済みバイナリを含むため macOS から Linux へ送っても動かないが、`uv.lock` さえ
+転送されていればリモートで `uv sync` すれば同一バージョンの環境が再現できる。
+変化が無いときの `uv sync` は 0.2 秒程度なので、差分検出はせず毎回実行する。
+
+**注意**: `$SHELL -lc` は `.zshrc` を読まない（非対話のため）。
+`~/.local/bin` などに入れたコマンドは絶対パスで書く。
 
 `submit_opts` の中身を trun は解釈しない。サイト固有の知識をツールに持たせないためで、
 Grid Engine の `-g <group>`、Slurm の `-A <account>`、PBS の `-P <project>` を
@@ -357,6 +370,8 @@ e07c443 pull: Si-band
 | 走行中ジョブの状態ファイル | `qstat` が持つ情報の写し |
 | 成否の判定 | exit code は弱く誤解を招く。解釈は読む側が行う |
 | ラッパスクリプトの生成 | 生成物を増やさない。ユーザーのスクリプトをそのまま `qsub` する |
+| `uv.lock` の差分検出 | 変化が無くても `uv sync` は 0.2 秒。検出の仕組みを持つ方が高くつく |
+| pull 後のローカル側フック | クラスタ側で `uv.lock` が変わることは実際上ない。必要になったら足す |
 | ファイルサイズによる転送制御 | 名前でもサイズでも、除外は `.trunignore` に一本化する |
 | 重いファイルの遅延取得 | 同上 |
 | クラスタ側の git 運用 | 成立しない（§6） |

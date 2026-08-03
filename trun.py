@@ -408,10 +408,14 @@ def cmd_init(args):
     info("投入時の追加オプション（qsub/sbatch にそのまま渡す。例: -g <group>）")
     submit_opts = ask("  submit_opts", "")
 
+    info("push のたびにリモートで実行するコマンド（例: $HOME/.local/bin/uv sync）")
+    after_push = ask("  after_push", "")
+
     (cwd / CONFIG_DIR).mkdir()
     (cwd / CONFIG_DIR / CONFIG_NAME).write_text(
-        'host = "{}"\nremote_root = "{}"\nscheduler = "{}"\nsubmit_opts = "{}"\n'
-        .format(host, remote_root.rstrip("/"), scheduler, submit_opts),
+        'host = "{}"\nremote_root = "{}"\nscheduler = "{}"\n'
+        'submit_opts = "{}"\nafter_push = "{}"\n'
+        .format(host, remote_root.rstrip("/"), scheduler, submit_opts, after_push),
         encoding="utf-8")
     ignore = cwd / IGNORE_NAME
     if not ignore.exists():
@@ -429,6 +433,32 @@ def do_push(root, cfg, dry_run=False):
     cmd = rsync_push_cmd(root, cfg, dry_run=dry_run)
     info("送信 {}/ → {}:{}/".format(Path(root).name, cfg["host"], remote_base(root, cfg)))
     run(cmd)
+    if not dry_run:
+        run_after_push(root, cfg)
+
+
+def run_after_push(root, cfg):
+    """after_push をリモートの trun ルートで実行する。
+
+    中身は解釈しない（`uv sync` でも `conda env update` でも `make` でもよい）。
+    ログインシェルで包むが、.zshrc は読まれないため ~/.local/bin 等に入れた
+    コマンドは絶対パスで書く必要がある。
+    """
+    cmd = (cfg.get("after_push") or "").strip()
+    if not cmd:
+        return
+    remote = remote_base(root, cfg)
+    full = "cd {} && {}".format(shlex.quote(remote), cmd)
+    info("実行 (remote) {}".format(cmd))
+    p = ssh(cfg, full, check=False, login=True)
+    if p.returncode != 0:
+        sys.stderr.write(p.stdout or "")
+        sys.stderr.write(p.stderr or "")
+        die("after_push が失敗しました: {}".format(cmd))
+    # uv 等は情報を stderr に出すため両方拾う
+    for line in ((p.stdout or "") + (p.stderr or "")).splitlines():
+        if line.strip():
+            info("  " + line)
 
 
 def cmd_push(args):
